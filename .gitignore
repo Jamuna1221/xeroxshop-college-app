@@ -1,0 +1,19 @@
+# Flutter
+.dart_tool/
+build/
+.packages
+pubspec.lock
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Node
+node_modules/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

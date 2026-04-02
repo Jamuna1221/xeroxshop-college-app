@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1073423015869",
+    "project_id": "xeroxshop-college-app-e4182",
+    "storage_bucket": "xeroxshop-college-app-e4182.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1073423015869:android:d022aebfb14c3b4672bcd4",
+        "android_client_info": {
+          "package_name": "com.example.frontend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDxfaHVwt9lwrdgkRHVIzTPvLOoVJj7W4A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
