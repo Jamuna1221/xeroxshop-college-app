@@ -20,6 +20,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final _rollCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  final _confirmPasswordCtrl = TextEditingController();
 
   String? _selectedYear;
   String? _selectedDept;
@@ -28,6 +30,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _sendingOtp = false;
   bool _verifyingOtp = false;
   bool _signingUp = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
   String? _errorMsg;
   String? _successMsg;
 
@@ -40,6 +44,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
     _rollCtrl.dispose();
     _emailCtrl.dispose();
     _otpCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -74,19 +80,57 @@ class _SignUpScreenState extends State<SignUpScreen> {
       onError: (e) => setState(() { _errorMsg = e; _verifyingOtp = false; }),
     );
     if (success) {
-      setState(() { _otpVerified = true; _verifyingOtp = false; _successMsg = 'Email verified ✓'; });
+      setState(() {
+        _otpVerified = true;
+        _verifyingOtp = false;
+        _successMsg = 'Email verified ✓';
+      });
     }
   }
 
   Future<void> _signUp() async {
-    if (_usernameCtrl.text.isEmpty || _rollCtrl.text.isEmpty ||
-        _selectedYear == null || _selectedDept == null) {
-      setState(() => _errorMsg = 'Please fill all fields');
+    if (_usernameCtrl.text.trim().isEmpty) {
+      setState(() => _errorMsg = 'Please enter your username');
       return;
     }
-    setState(() { _signingUp = true; _errorMsg = null; });
-    await Future.delayed(const Duration(milliseconds: 600));
-    if (mounted) {
+    if (_rollCtrl.text.trim().isEmpty) {
+      setState(() => _errorMsg = 'Please enter your roll number');
+      return;
+    }
+    if (_selectedYear == null) {
+      setState(() => _errorMsg = 'Please select your year');
+      return;
+    }
+    if (_selectedDept == null) {
+      setState(() => _errorMsg = 'Please select your department');
+      return;
+    }
+    if (!_otpVerified) {
+      setState(() => _errorMsg = 'Please verify your email first');
+      return;
+    }
+    if (_passwordCtrl.text.length < 6) {
+      setState(() => _errorMsg = 'Password must be at least 6 characters');
+      return;
+    }
+    if (_passwordCtrl.text != _confirmPasswordCtrl.text) {
+      setState(() => _errorMsg = 'Passwords do not match');
+      return;
+    }
+
+    setState(() { _signingUp = true; _errorMsg = null; _successMsg = null; });
+
+    final success = await _authService.signUpWithEmailPassword(
+      email: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      username: _usernameCtrl.text.trim(),
+      rollNumber: _rollCtrl.text.trim(),
+      year: _selectedYear!,
+      department: _selectedDept!,
+      onError: (e) => setState(() { _errorMsg = e; _signingUp = false; }),
+    );
+
+    if (success && mounted) {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
@@ -116,13 +160,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     decoration: BoxDecoration(
                       color: const Color(0xFFE53935),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: const Color(0xFFE53935).withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(
+                        color: const Color(0xFFE53935).withOpacity(0.3),
+                        blurRadius: 16, offset: const Offset(0, 6),
+                      )],
                     ),
                     child: const Icon(Icons.print_rounded, color: Colors.white, size: 32),
                   ),
                   const SizedBox(height: 16),
-                  Text('Create Account', style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w700, color: const Color(0xFF1E1E1E))),
-                  Text('Join Smart Print System', style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500])),
+                  Text('Create Account',
+                      style: GoogleFonts.poppins(fontSize: 26, fontWeight: FontWeight.w700, color: const Color(0xFF1E1E1E))),
+                  Text('Join Smart Print System',
+                      style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500])),
                 ]),
               ),
               const SizedBox(height: 28),
@@ -134,19 +183,25 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 4))],
+                    boxShadow: [BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 20, offset: const Offset(0, 4),
+                    )],
                   ),
                   child: Column(children: [
+                    // ── Basic Info ──────────────────────────────
                     CustomTextField(hint: 'Username', icon: Icons.person_outline_rounded, controller: _usernameCtrl),
                     const SizedBox(height: 14),
                     CustomTextField(hint: 'Roll Number', icon: Icons.badge_outlined, controller: _rollCtrl),
                     const SizedBox(height: 14),
-                    _buildDropdown('Select Year', Icons.school_outlined, _years, _selectedYear, (v) => setState(() => _selectedYear = v)),
+                    _buildDropdown('Select Year', Icons.school_outlined, _years, _selectedYear,
+                        (v) => setState(() => _selectedYear = v)),
                     const SizedBox(height: 14),
-                    _buildDropdown('Select Department', Icons.apartment_outlined, _departments, _selectedDept, (v) => setState(() => _selectedDept = v)),
+                    _buildDropdown('Select Department', Icons.apartment_outlined, _departments, _selectedDept,
+                        (v) => setState(() => _selectedDept = v)),
                     const SizedBox(height: 14),
 
-                    // Email + Send OTP row
+                    // ── Email + Send OTP ────────────────────────
                     Row(children: [
                       Expanded(
                         child: CustomTextField(
@@ -167,7 +222,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                     ]),
 
-                    // OTP field (appears after sending)
+                    // ── OTP Input ───────────────────────────────
                     if (_otpSent) ...[
                       const SizedBox(height: 20),
                       FadeInUp(
@@ -175,9 +230,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Enter OTP', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF1E1E1E))),
+                            Text('Enter OTP', style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 4),
-                            Text('Check your email inbox', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500])),
+                            Text('Check your email inbox',
+                                style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[500])),
                             const SizedBox(height: 12),
                             Center(child: OtpInputField(controller: _otpCtrl)),
                             const SizedBox(height: 14),
@@ -192,11 +248,39 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                     ],
 
+                    // ── Password fields (shown after OTP verified) ──
+                    if (_otpVerified) ...[
+                      const SizedBox(height: 20),
+                      FadeInUp(
+                        duration: const Duration(milliseconds: 400),
+                        child: Column(children: [
+                          _buildPasswordField(
+                            controller: _passwordCtrl,
+                            hint: 'Password',
+                            obscure: _obscurePassword,
+                            onToggle: () => setState(() => _obscurePassword = !_obscurePassword),
+                          ),
+                          const SizedBox(height: 14),
+                          _buildPasswordField(
+                            controller: _confirmPasswordCtrl,
+                            hint: 'Confirm Password',
+                            obscure: _obscureConfirmPassword,
+                            onToggle: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                          ),
+                        ]),
+                      ),
+                    ],
+
+                    // ── Messages ────────────────────────────────
                     if (_errorMsg != null) ...[const SizedBox(height: 12), _buildMessage(_errorMsg!, isError: true)],
                     if (_successMsg != null) ...[const SizedBox(height: 12), _buildMessage(_successMsg!, isError: false)],
 
                     const SizedBox(height: 20),
-                    CustomButton(label: 'Sign Up', onPressed: _otpVerified ? _signUp : null, isLoading: _signingUp),
+                    CustomButton(
+                      label: 'Sign Up',
+                      onPressed: _otpVerified ? _signUp : null,
+                      isLoading: _signingUp,
+                    ),
                     const SizedBox(height: 16),
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
@@ -205,7 +289,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
                           children: const [
                             TextSpan(text: 'Already have an account? '),
-                            TextSpan(text: 'Sign In', style: TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.w600)),
+                            TextSpan(text: 'Sign In',
+                                style: TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -220,13 +305,55 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  Widget _buildDropdown(String hint, IconData icon, List<String> items, String? value, ValueChanged<String?> onChanged) {
+  Widget _buildPasswordField({
+    required TextEditingController controller,
+    required String hint,
+    required bool obscure,
+    required VoidCallback onToggle,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.grey[200]!),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(
+          color: Colors.black.withOpacity(0.06),
+          blurRadius: 8, offset: const Offset(0, 2),
+        )],
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        style: GoogleFonts.poppins(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[400]),
+          prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFFE53935), size: 20),
+          suffixIcon: IconButton(
+            icon: Icon(
+              obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              color: Colors.grey[400], size: 20,
+            ),
+            onPressed: onToggle,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown(String hint, IconData icon, List<String> items,
+      String? value, ValueChanged<String?> onChanged) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey[200]!),
+        boxShadow: [BoxShadow(
+          color: Colors.black.withOpacity(0.06),
+          blurRadius: 8, offset: const Offset(0, 2),
+        )],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: DropdownButtonHideUnderline(
@@ -239,7 +366,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
             Text(hint, style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[400])),
           ]),
           icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFE53935)),
-          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: GoogleFonts.poppins(fontSize: 14)))).toList(),
+          items: items.map((e) => DropdownMenuItem(
+            value: e,
+            child: Text(e, style: GoogleFonts.poppins(fontSize: 14)),
+          )).toList(),
           onChanged: onChanged,
         ),
       ),
@@ -254,9 +384,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(children: [
-        Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: isError ? const Color(0xFFE53935) : Colors.green, size: 18),
+        Icon(isError ? Icons.error_outline : Icons.check_circle_outline,
+            color: isError ? const Color(0xFFE53935) : Colors.green, size: 18),
         const SizedBox(width: 8),
-        Expanded(child: Text(msg, style: GoogleFonts.poppins(fontSize: 12, color: isError ? const Color(0xFFE53935) : Colors.green))),
+        Expanded(child: Text(msg,
+            style: GoogleFonts.poppins(fontSize: 12,
+                color: isError ? const Color(0xFFE53935) : Colors.green))),
       ]),
     );
   }
