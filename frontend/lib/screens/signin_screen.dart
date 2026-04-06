@@ -5,6 +5,7 @@ import '../services/auth_service.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
 import 'home_screen.dart';
+import '../admin/admin_dashboard_screen.dart';
 import 'signup_screen.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -52,10 +53,15 @@ class _SignInScreenState extends State<SignInScreen> {
     );
 
     if (success && mounted) {
+      // Check if the signed-in user is an admin
+      final isAdmin = await _authService.checkIfAdmin();
+
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HomeScreen(),
+          pageBuilder: (_, __, ___) =>
+              isAdmin ? const AdminDashboardScreen() : const HomeScreen(),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
           transitionDuration: const Duration(milliseconds: 400),

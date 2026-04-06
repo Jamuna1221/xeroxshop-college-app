@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'email_service.dart';
@@ -14,10 +15,7 @@ class AuthService {
     required Function(String error) onError,
   }) async {
     try {
-      await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
       return true;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -61,9 +59,7 @@ class AuthService {
       await prefs.setString('otp_email', email);
       await prefs.setInt(
         'otp_expiry',
-        DateTime.now()
-            .add(const Duration(minutes: 5))
-            .millisecondsSinceEpoch,
+        DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch,
       );
       await EmailService.sendOTP(email: email, otp: otp);
       onCodeSent();
@@ -118,11 +114,8 @@ class AuthService {
     required Function(String error) onError,
   }) async {
     try {
-      final UserCredential credential =
-          await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+      final UserCredential credential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password);
 
       // Save display name to Firebase profile
       await credential.user?.updateDisplayName(username);
@@ -161,7 +154,25 @@ class AuthService {
     }
   }
 
-  // ─── Helpers ─────────────────────────────────────────────────────────────
+  // ─── Check Admin Role ─────────────────────────────────────────────────────
+  /// Returns true if the currently signed-in user has role == 'admin'
+  /// in Firestore (collection: 'users', doc: uid).
+  Future<bool> checkIfAdmin() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .get();
+      if (!doc.exists) return false;
+      return doc.data()?['role'] == 'admin';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   String _generateOTP() {
     final rand = Random.secure();
     return (100000 + rand.nextInt(900000)).toString();
