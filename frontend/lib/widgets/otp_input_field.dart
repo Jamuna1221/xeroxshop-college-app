@@ -22,7 +22,7 @@ class OtpInputField extends StatelessWidget {
         border: Border.all(color: Colors.grey[300]!),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 6,
             offset: const Offset(0, 2),
           ),
@@ -38,7 +38,7 @@ class OtpInputField extends StatelessWidget {
 
     final submittedTheme = defaultTheme.copyWith(
       decoration: defaultTheme.decoration!.copyWith(
-        color: const Color(0xFFE53935).withOpacity(0.08),
+        color: const Color(0xFFE53935).withValues(alpha: 0.08),
         border: Border.all(color: const Color(0xFFE53935)),
       ),
     );

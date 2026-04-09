@@ -1,37 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../services/auth_service.dart';
+import 'services/owner_auth_service.dart';
 import '../screens/signin_screen.dart';
-import 'add_shop_owner_sheet.dart';
 
-class AdminDashboardScreen extends StatelessWidget {
-  const AdminDashboardScreen({super.key});
+class OwnerDashboardScreen extends StatefulWidget {
+  const OwnerDashboardScreen({super.key});
 
-  void _openAddOwnerSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const AddShopOwnerSheet(),
-    );
+  @override
+  State<OwnerDashboardScreen> createState() => _OwnerDashboardScreenState();
+}
+
+class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
+  final _service = OwnerAuthService();
+  Map<String, dynamic>? _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  Future<void> _loadProfile() async {
+    final data = await _service.getOwnerProfile();
+    if (mounted) setState(() => _profile = data);
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService().currentUser;
+    final shopName  = _profile?['shopName']  as String? ?? 'Your Shop';
+    final ownerName = _profile?['ownerName'] as String? ?? 'Owner';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
         backgroundColor: const Color(0xFFE53935),
-        title: Text('Admin Dashboard',
+        title: Text(shopName,
             style: GoogleFonts.poppins(
                 color: Colors.white, fontWeight: FontWeight.w600)),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () async {
-              await AuthService().signOut();
+              await _service.signOut();
               if (context.mounted) {
                 Navigator.pushReplacement(context,
                     MaterialPageRoute(builder: (_) => const SignInScreen()));
@@ -51,14 +61,14 @@ class AdminDashboardScreen extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                  colors: [Color(0xFFE53935), Color(0xFFEF5350)],
+                  colors: [Color(0xFF1565C0), Color(0xFF1E88E5)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE53935).withValues(alpha: 0.35),
+                    color: const Color(0xFF1565C0).withValues(alpha: 0.35),
                     blurRadius: 20, offset: const Offset(0, 8),
                   ),
                 ],
@@ -70,7 +80,7 @@ class AdminDashboardScreen extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: const Icon(Icons.admin_panel_settings_rounded,
+                  child: const Icon(Icons.storefront_rounded,
                       color: Colors.white, size: 28),
                 ),
                 const SizedBox(width: 16),
@@ -78,14 +88,14 @@ class AdminDashboardScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Welcome, Admin',
+                      Text('Welcome, $ownerName',
                           style: GoogleFonts.poppins(
-                              fontSize: 18, fontWeight: FontWeight.w700,
+                              fontSize: 17, fontWeight: FontWeight.w700,
                               color: Colors.white)),
-                      Text(user?.email ?? '',
+                      Text(shopName,
                           style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.8))),
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.85))),
                     ],
                   ),
                 ),
@@ -93,7 +103,7 @@ class AdminDashboardScreen extends StatelessWidget {
             ),
 
             const SizedBox(height: 28),
-            Text('Quick Actions',
+            Text('Shop Actions',
                 style: GoogleFonts.poppins(
                     fontSize: 16, fontWeight: FontWeight.w600,
                     color: const Color(0xFF1E1E1E))),
@@ -107,35 +117,36 @@ class AdminDashboardScreen extends StatelessWidget {
               mainAxisSpacing: 14,
               childAspectRatio: 1.15,
               children: [
-                // ── Add Shop Owner ──────────────────────────────────────────
-                _AdminCard(
-                  icon: Icons.store_rounded,
-                  label: 'Add Shop Owner',
-                  color: const Color(0xFF43A047),
-                  onTap: () => _openAddOwnerSheet(context),
-                ),
-                _AdminCard(
-                  icon: Icons.people_rounded,
-                  label: 'Manage Users',
-                  color: const Color(0xFF5C6BC0),
+                _OwnerCard(
+                  icon: Icons.print_rounded,
+                  label: 'Print Queue',
+                  color: const Color(0xFFE53935),
                   onTap: () {
-                    // TODO: navigate to user management
+                    // TODO: navigate to print queue
                   },
                 ),
-                _AdminCard(
-                  icon: Icons.print_rounded,
-                  label: 'Print Requests',
+                _OwnerCard(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Orders',
                   color: const Color(0xFF26A69A),
                   onTap: () {
-                    // TODO: navigate to print requests
+                    // TODO: navigate to orders
                   },
                 ),
-                _AdminCard(
-                  icon: Icons.bar_chart_rounded,
-                  label: 'Reports',
+                _OwnerCard(
+                  icon: Icons.payments_outlined,
+                  label: 'Earnings',
                   color: const Color(0xFFF57C00),
                   onTap: () {
-                    // TODO: navigate to reports
+                    // TODO: navigate to earnings
+                  },
+                ),
+                _OwnerCard(
+                  icon: Icons.settings_rounded,
+                  label: 'Shop Settings',
+                  color: const Color(0xFF8D6E63),
+                  onTap: () {
+                    // TODO: navigate to shop settings
                   },
                 ),
               ],
@@ -147,13 +158,13 @@ class AdminDashboardScreen extends StatelessWidget {
   }
 }
 
-class _AdminCard extends StatelessWidget {
+class _OwnerCard extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback onTap;
 
-  const _AdminCard({
+  const _OwnerCard({
     required this.icon,
     required this.label,
     required this.color,

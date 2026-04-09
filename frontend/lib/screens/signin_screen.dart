@@ -5,8 +5,11 @@ import '../services/auth_service.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
 import 'home_screen.dart';
-import '../admin/admin_dashboard_screen.dart';
 import 'signup_screen.dart';
+import '../admin/admin_dashboard_screen.dart';
+import '../owner/owner_dashboard_screen.dart';
+import '../owner/change_password_screen.dart';
+import '../owner/services/owner_auth_service.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -16,12 +19,13 @@ class SignInScreen extends StatefulWidget {
 }
 
 class _SignInScreenState extends State<SignInScreen> {
-  final _authService = AuthService();
-  final _emailCtrl = TextEditingController();
+  final _authService  = AuthService();
+  final _ownerService = OwnerAuthService();
+  final _emailCtrl    = TextEditingController();
   final _passwordCtrl = TextEditingController();
 
-  bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool    _isLoading       = false;
+  bool    _obscurePassword = true;
   String? _errorMsg;
 
   @override
@@ -47,27 +51,44 @@ class _SignInScreenState extends State<SignInScreen> {
     setState(() { _isLoading = true; _errorMsg = null; });
 
     final success = await _authService.signInWithEmailPassword(
-      email: _emailCtrl.text.trim(),
+      email:    _emailCtrl.text.trim(),
       password: _passwordCtrl.text,
       onError: (e) => setState(() { _errorMsg = e; _isLoading = false; }),
     );
 
-    if (success && mounted) {
-      // Check if the signed-in user is an admin
-      final isAdmin = await _authService.checkIfAdmin();
+    if (!success || !mounted) return;
 
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) =>
-              isAdmin ? const AdminDashboardScreen() : const HomeScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-          transitionDuration: const Duration(milliseconds: 400),
-        ),
-      );
+    // ── Determine role and route accordingly ─────────────────────────────
+    final role = await _authService.getUserRole();
+
+    if (!mounted) return;
+
+    Widget destination;
+
+    if (role == 'admin') {
+      destination = const AdminDashboardScreen();
+    } else if (role == 'owner') {
+      // Check if this is the owner's first login (temp password not yet changed)
+      final firstLogin = await _ownerService.isFirstLogin();
+      destination = firstLogin
+          ? const ChangePasswordScreen()
+          : const OwnerDashboardScreen();
+    } else {
+      // Regular user
+      destination = const HomeScreen();
     }
+
+    if (!mounted) return;
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, animation, secondaryAnimation) => destination,
+        transitionsBuilder: (_, anim, secondaryAnimation, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
   }
 
   @override
@@ -88,21 +109,27 @@ class _SignInScreenState extends State<SignInScreen> {
                       color: const Color(0xFFE53935),
                       borderRadius: BorderRadius.circular(24),
                       boxShadow: [BoxShadow(
-                        color: const Color(0xFFE53935).withOpacity(0.35),
+                        color: const Color(0xFFE53935).withValues(alpha: 0.35),
                         blurRadius: 20, offset: const Offset(0, 8),
                       )],
                     ),
-                    child: const Icon(Icons.print_rounded, color: Colors.white, size: 40),
+                    child: const Icon(Icons.print_rounded,
+                        color: Colors.white, size: 40),
                   ),
                   const SizedBox(height: 20),
                   Text('Welcome Back',
-                      style: GoogleFonts.poppins(fontSize: 28, fontWeight: FontWeight.w700, color: const Color(0xFF1E1E1E))),
+                      style: GoogleFonts.poppins(
+                          fontSize: 28, fontWeight: FontWeight.w700,
+                          color: const Color(0xFF1E1E1E))),
                   const SizedBox(height: 4),
                   Text('Login to continue',
-                      style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[500])),
+                      style: GoogleFonts.poppins(
+                          fontSize: 14, color: Colors.grey[500])),
                 ]),
               ),
+
               const SizedBox(height: 40),
+
               FadeInUp(
                 duration: const Duration(milliseconds: 600),
                 delay: const Duration(milliseconds: 200),
@@ -112,13 +139,13 @@ class _SignInScreenState extends State<SignInScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [BoxShadow(
-                      color: Colors.black.withOpacity(0.07),
+                      color: Colors.black.withValues(alpha: 0.07),
                       blurRadius: 24, offset: const Offset(0, 6),
                     )],
                   ),
                   child: Column(children: [
                     CustomTextField(
-                      hint: 'College Email',
+                      hint: 'Email',
                       icon: Icons.email_outlined,
                       controller: _emailCtrl,
                       keyboardType: TextInputType.emailAddress,
@@ -140,7 +167,10 @@ class _SignInScreenState extends State<SignInScreen> {
                       ),
                     ),
                     const SizedBox(height: 20),
-                    CustomButton(label: 'Sign In', onPressed: _signIn, isLoading: _isLoading),
+                    CustomButton(
+                        label: 'Sign In',
+                        onPressed: _signIn,
+                        isLoading: _isLoading),
                     if (_errorMsg != null) ...[
                       const SizedBox(height: 14),
                       _buildMessage(_errorMsg!, isError: true),
@@ -148,14 +178,19 @@ class _SignInScreenState extends State<SignInScreen> {
                     const SizedBox(height: 20),
                     GestureDetector(
                       onTap: () => Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const SignUpScreen())),
+                          MaterialPageRoute(
+                              builder: (_) => const SignUpScreen())),
                       child: RichText(
                         text: TextSpan(
-                          style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600]),
+                          style: GoogleFonts.poppins(
+                              fontSize: 13, color: Colors.grey[600]),
                           children: const [
                             TextSpan(text: "Don't have an account? "),
-                            TextSpan(text: 'Sign Up',
-                                style: TextStyle(color: Color(0xFFE53935), fontWeight: FontWeight.w600)),
+                            TextSpan(
+                                text: 'Sign Up',
+                                style: TextStyle(
+                                    color: Color(0xFFE53935),
+                                    fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -177,7 +212,7 @@ class _SignInScreenState extends State<SignInScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.grey[200]!),
         boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.06),
+          color: Colors.black.withValues(alpha: 0.06),
           blurRadius: 8, offset: const Offset(0, 2),
         )],
       ),
@@ -188,13 +223,17 @@ class _SignInScreenState extends State<SignInScreen> {
         decoration: InputDecoration(
           hintText: 'Password',
           hintStyle: GoogleFonts.poppins(fontSize: 14, color: Colors.grey[400]),
-          prefixIcon: const Icon(Icons.lock_outline_rounded, color: Color(0xFFE53935), size: 20),
+          prefixIcon: const Icon(Icons.lock_outline_rounded,
+              color: Color(0xFFE53935), size: 20),
           suffixIcon: IconButton(
             icon: Icon(
-              _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+              _obscurePassword
+                  ? Icons.visibility_off_outlined
+                  : Icons.visibility_outlined,
               color: Colors.grey[400], size: 20,
             ),
-            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+            onPressed: () =>
+                setState(() => _obscurePassword = !_obscurePassword),
           ),
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 16),
@@ -215,7 +254,8 @@ class _SignInScreenState extends State<SignInScreen> {
             color: isError ? const Color(0xFFE53935) : Colors.green, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text(msg,
-            style: GoogleFonts.poppins(fontSize: 12,
+            style: GoogleFonts.poppins(
+                fontSize: 12,
                 color: isError ? const Color(0xFFE53935) : Colors.green))),
       ]),
     );

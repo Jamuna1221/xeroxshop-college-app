@@ -7,6 +7,7 @@ import 'email_service.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   // ─── Sign In with Email & Password ───────────────────────────────────────
   Future<bool> signInWithEmailPassword({
@@ -15,7 +16,10 @@ class AuthService {
     required Function(String error) onError,
   }) async {
     try {
-      await _auth.signInWithEmailAndPassword(email: email, password: password);
+      await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       return true;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -46,6 +50,21 @@ class AuthService {
     }
   }
 
+  // ─── Get Role ─────────────────────────────────────────────────────────────
+  /// Returns 'admin', 'owner', 'user', or null.
+  /// Used by SignInScreen to decide which dashboard to open.
+  Future<String?> getUserRole() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+      final doc = await _db.collection('users').doc(user.uid).get();
+      if (!doc.exists) return null;
+      return doc.data()?['role'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   // ─── OTP: Send (used in Sign Up) ─────────────────────────────────────────
   Future<void> sendEmailOTP({
     required String email,
@@ -59,7 +78,9 @@ class AuthService {
       await prefs.setString('otp_email', email);
       await prefs.setInt(
         'otp_expiry',
-        DateTime.now().add(const Duration(minutes: 5)).millisecondsSinceEpoch,
+        DateTime.now()
+            .add(const Duration(minutes: 5))
+            .millisecondsSinceEpoch,
       );
       await EmailService.sendOTP(email: email, otp: otp);
       onCodeSent();
@@ -91,7 +112,6 @@ class AuthService {
         return false;
       }
 
-      // Clear OTP after success
       await prefs.remove('otp_code');
       await prefs.remove('otp_expiry');
       await prefs.remove('otp_email');
@@ -103,7 +123,7 @@ class AuthService {
     }
   }
 
-  // ─── Sign Up with Email + Password (called after OTP verified) ───────────
+  // ─── Sign Up with Email + Password ───────────────────────────────────────
   Future<bool> signUpWithEmailPassword({
     required String email,
     required String password,
@@ -114,24 +134,12 @@ class AuthService {
     required Function(String error) onError,
   }) async {
     try {
-      final UserCredential credential = await _auth
-          .createUserWithEmailAndPassword(email: email, password: password);
-
-      // Save display name to Firebase profile
+      final UserCredential credential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
       await credential.user?.updateDisplayName(username);
-
-      // Optional: save extra fields to Firestore
-      // await FirebaseFirestore.instance
-      //     .collection('users')
-      //     .doc(credential.user!.uid)
-      //     .set({
-      //   'username': username,
-      //   'rollNumber': rollNumber,
-      //   'year': year,
-      //   'department': department,
-      //   'email': email,
-      // });
-
       return true;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -154,25 +162,7 @@ class AuthService {
     }
   }
 
-  // ─── Check Admin Role ─────────────────────────────────────────────────────
-  /// Returns true if the currently signed-in user has role == 'admin'
-  /// in Firestore (collection: 'users', doc: uid).
-  Future<bool> checkIfAdmin() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return false;
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      if (!doc.exists) return false;
-      return doc.data()?['role'] == 'admin';
-    } catch (_) {
-      return false;
-    }
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────
   String _generateOTP() {
     final rand = Random.secure();
     return (100000 + rand.nextInt(900000)).toString();

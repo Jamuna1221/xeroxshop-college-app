@@ -134,8 +134,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HomeScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
+          pageBuilder: (_, animation, secondaryAnimation) => const HomeScreen(),
+          transitionsBuilder: (_, anim, secondaryAnimation, child) =>
               FadeTransition(opacity: anim, child: child),
           transitionDuration: const Duration(milliseconds: 400),
         ),
@@ -161,7 +161,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       color: const Color(0xFFE53935),
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [BoxShadow(
-                        color: const Color(0xFFE53935).withOpacity(0.3),
+                        color: const Color(0xFFE53935).withValues(alpha: 0.3),
                         blurRadius: 16, offset: const Offset(0, 6),
                       )],
                     ),
@@ -184,7 +184,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
+                      color: Colors.black.withValues(alpha: 0.06),
                       blurRadius: 20, offset: const Offset(0, 4),
                     )],
                   ),
@@ -317,7 +317,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.grey[200]!),
         boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.06),
+          color: Colors.black.withValues(alpha: 0.06),
           blurRadius: 8, offset: const Offset(0, 2),
         )],
       ),
@@ -351,7 +351,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.grey[200]!),
         boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.06),
+          color: Colors.black.withValues(alpha: 0.06),
           blurRadius: 8, offset: const Offset(0, 2),
         )],
       ),
