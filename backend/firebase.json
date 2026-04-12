@@ -5,6 +5,15 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
+  "functions": {
+    "source": "functions"
+  },
+  "emulators": {
+    "functions": { "port": 5002 },
+    "ui": { "port": 4002 },
+    "hub": { "port": 4402 },
+    "logging": { "port": 4502 }
+  },
   "hosting": {
     "public": "public",
     "ignore": [

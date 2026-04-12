@@ -1,12 +1,11 @@
-import 'dart:math';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../services/email_service.dart';
+import 'admin_api_service.dart';
 
 class AdminAuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final AdminApiService _api = AdminApiService();
 
   // ─── Create Shop Owner ────────────────────────────────────────────────────
   /// 1. Creates a Firebase Auth account with a temp password.
@@ -22,25 +21,30 @@ class AdminAuthService {
     required VoidCallback onSuccess,
   }) async {
     try {
-      final tempPassword = _generateTempPassword();
-
-      // Create Firebase Auth account
-      final credential = await _auth.createUserWithEmailAndPassword(
+      final created = await _api.createOwner(
         email: email,
-        password: tempPassword,
+        ownerName: ownerName,
+        shopName: shopName,
+        phone: phone,
       );
+      final tempPassword = (created['tempPassword'] as String?) ?? '';
+      final uid = (created['uid'] as String?) ?? '';
 
-      // Save owner profile to Firestore
-      await _db.collection('users').doc(credential.user!.uid).set({
-        'uid':                credential.user!.uid,
-        'email':              email,
-        'ownerName':          ownerName,
-        'shopName':           shopName,
-        'phone':              phone,
-        'role':               'owner',
-        'mustChangePassword': true,
-        'createdAt':          FieldValue.serverTimestamp(),
-      });
+      // Backfill any missing fields (safe merge)
+      if (uid.isNotEmpty) {
+        await _db.collection('users').doc(uid).set({
+          'uid': uid,
+          'email': email,
+          'ownerName': ownerName,
+          'shopName': shopName,
+          'phone': phone,
+          'role': 'owner',
+          'mustChangePassword': true,
+          'accountSetupStatus': 'pending',
+          'totalRevenue': 0,
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
       // Email credentials to owner
       await EmailService.sendShopOwnerCredentials(
@@ -52,33 +56,9 @@ class AdminAuthService {
 
       onSuccess();
       return true;
-    } on FirebaseAuthException catch (e) {
-      switch (e.code) {
-        case 'email-already-in-use':
-          onError('An account already exists with this email.');
-          break;
-        case 'invalid-email':
-          onError('Invalid email address.');
-          break;
-        default:
-          onError('Failed to create owner: ${e.message ?? e.code}');
-      }
-      return false;
     } catch (e) {
       onError('Failed to create owner: ${e.toString()}');
       return false;
     }
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
-  /// Generates a readable temp password: e.g. "Print@4821"
-  String _generateTempPassword() {
-    const chars = 'abcdefghjkmnpqrstuvwxyz';
-    const digits = '0123456789';
-    final rand = Random.secure();
-    final word = List.generate(5, (_) => chars[rand.nextInt(chars.length)]).join();
-    final num  = List.generate(4, (_) => digits[rand.nextInt(digits.length)]).join();
-    // Capitalise first letter + add @ to meet most password policies
-    return '${word[0].toUpperCase()}${word.substring(1)}@$num';
   }
 }
