@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+// Import your upload print screen
+import 'upload_print_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -31,6 +34,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // ── Navigate to Upload Screen ──────────────────────────────────────────────
+  void _goToUpload() {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, animation, __) => const UploadPrintScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(1.0, 0.0),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(
+              parent: animation,
+              curve: Curves.easeOutCubic,
+            )),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 380),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -50,8 +76,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildWelcomeSection(),
-              _buildUploadCard(),
-              _buildQuickOptions(),
+              _buildUploadCard(),       // tapping "Upload Now" → UploadPrintScreen
+              _buildQuickOptions(),     // tapping "Custom Print" → UploadPrintScreen
               _buildNearbyShops(),
               _buildRecentOrders(),
             ],
@@ -146,7 +172,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           RichText(
             text: TextSpan(
               style: GoogleFonts.poppins(
-                  fontSize: 22, fontWeight: FontWeight.w700, color: const Color(0xFF1A1A2E)),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1A1A2E)),
               children: const [
                 TextSpan(text: 'Welcome Back, '),
                 TextSpan(
@@ -218,7 +246,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               padding: const EdgeInsets.all(22),
               child: Row(
                 children: [
-                  // Left content
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -233,19 +260,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               color: Colors.white, size: 28),
                         ),
                         const SizedBox(height: 14),
-                        Text('Upload Document',
-                            style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white)),
+                        Text(
+                          'Upload Document',
+                          style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white),
+                        ),
                         const SizedBox(height: 4),
-                        Text('PDF, Image, Word Docs',
-                            style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.white.withOpacity(0.8))),
+                        Text(
+                          'PDF, Image, Word Docs',
+                          style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.8)),
+                        ),
                         const SizedBox(height: 18),
+                        // ── WIRED: navigates to UploadPrintScreen ──
                         GestureDetector(
-                          onTap: () {},
+                          onTap: _goToUpload,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 22, vertical: 11),
@@ -273,7 +305,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  // Right illustration
                   Column(
                     children: [
                       const SizedBox(height: 10),
@@ -293,10 +324,30 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ── Quick Options ──────────────────────────────────────────────────────────
   Widget _buildQuickOptions() {
     final options = [
-      {'icon': Icons.print_rounded, 'label': 'B&W Print', 'color': const Color(0xFF37474F)},
-      {'icon': Icons.color_lens_rounded, 'label': 'Color Print', 'color': const Color(0xFF1E88E5)},
-      {'icon': Icons.content_copy_rounded, 'label': 'Multiple Copies', 'color': const Color(0xFF43A047)},
-      {'icon': Icons.tune_rounded, 'label': 'Custom Print', 'color': const Color(0xFFE53935)},
+      {
+        'icon': Icons.print_rounded,
+        'label': 'B&W Print',
+        'color': const Color(0xFF37474F),
+        'navigate': true,
+      },
+      {
+        'icon': Icons.color_lens_rounded,
+        'label': 'Color Print',
+        'color': const Color(0xFF1E88E5),
+        'navigate': true,
+      },
+      {
+        'icon': Icons.content_copy_rounded,
+        'label': 'Multiple Copies',
+        'color': const Color(0xFF43A047),
+        'navigate': true,
+      },
+      {
+        'icon': Icons.tune_rounded,
+        'label': 'Custom Print',
+        'color': const Color(0xFFE53935),
+        'navigate': true,
+      },
     ];
 
     return Column(
@@ -312,11 +363,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1A1A2E))),
-              Text('See all',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: const Color(0xFFE53935),
-                      fontWeight: FontWeight.w500)),
+              GestureDetector(
+                onTap: _goToUpload,
+                child: Text('See all',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: const Color(0xFFE53935),
+                        fontWeight: FontWeight.w500)),
+              ),
             ],
           ),
         ),
@@ -336,7 +390,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               final opt = options[i];
               final color = opt['color'] as Color;
               return GestureDetector(
-                onTap: () {},
+                // ── WIRED: all quick options open UploadPrintScreen ──
+                onTap: _goToUpload,
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -349,7 +404,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
                   child: Row(
                     children: [
                       Container(
@@ -358,7 +414,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           color: color.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(opt['icon'] as IconData, color: color, size: 22),
+                        child: Icon(opt['icon'] as IconData,
+                            color: color, size: 22),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -452,7 +509,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               color: Color(0xFFE53935), size: 18),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
                             color: isOpen
                                 ? const Color(0xFFE8F5E9)
@@ -464,7 +522,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             style: GoogleFonts.poppins(
                               fontSize: 9,
                               fontWeight: FontWeight.w600,
-                              color: isOpen ? Colors.green : const Color(0xFFE53935),
+                              color: isOpen
+                                  ? Colors.green
+                                  : const Color(0xFFE53935),
                             ),
                           ),
                         ),
@@ -498,7 +558,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     SizedBox(
                       width: double.infinity,
                       child: TextButton(
-                        onPressed: isOpen ? () {} : null,
+                        // ── WIRED: Select shop → go to upload screen ──
+                        onPressed: isOpen ? _goToUpload : null,
                         style: TextButton.styleFrom(
                           backgroundColor: isOpen
                               ? const Color(0xFFE53935)
@@ -514,7 +575,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: isOpen ? Colors.white : Colors.grey[400],
+                            color:
+                                isOpen ? Colors.white : Colors.grey[400],
                           ),
                         ),
                       ),
@@ -594,87 +656,91 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             final bgColor = order['bgColor'] as Color;
             final icon = order['icon'] as IconData;
 
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  // File icon
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFEBEE),
-                      borderRadius: BorderRadius.circular(12),
+            return GestureDetector(
+              // ── WIRED: tapping a recent order re-opens upload screen ──
+              onTap: _goToUpload,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
-                    child: const Icon(Icons.picture_as_pdf_rounded,
-                        color: Color(0xFFE53935), size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  // File info
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(order['file'] as String,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF1A1A2E))),
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            Text(order['pages'] as String,
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.grey[500])),
-                            const SizedBox(width: 8),
-                            Text('•',
-                                style: TextStyle(
-                                    color: Colors.grey[400], fontSize: 11)),
-                            const SizedBox(width: 8),
-                            Text(order['time'] as String,
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.grey[500])),
-                          ],
-                        ),
-                      ],
+                  ],
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFEBEE),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.picture_as_pdf_rounded,
+                          color: Color(0xFFE53935), size: 22),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  // Status badge
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(20),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(order['file'] as String,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF1A1A2E))),
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Text(order['pages'] as String,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 11,
+                                      color: Colors.grey[500])),
+                              const SizedBox(width: 8),
+                              Text('•',
+                                  style: TextStyle(
+                                      color: Colors.grey[400],
+                                      fontSize: 11)),
+                              const SizedBox(width: 8),
+                              Text(order['time'] as String,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 11,
+                                      color: Colors.grey[500])),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(icon, color: statusColor, size: 12),
-                        const SizedBox(width: 4),
-                        Text(order['status'] as String,
-                            style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: statusColor)),
-                      ],
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(icon, color: statusColor, size: 12),
+                          const SizedBox(width: 4),
+                          Text(order['status'] as String,
+                              style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: statusColor)),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -705,7 +771,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         ],
       ),
       child: FloatingActionButton(
-        onPressed: () {},
+        // ── WIRED: FAB + button → UploadPrintScreen ──
+        onPressed: _goToUpload,
         backgroundColor: Colors.transparent,
         elevation: 0,
         child: const Icon(Icons.add_rounded, color: Colors.white, size: 28),
@@ -739,14 +806,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: List.generate(tabs.length, (i) {
-              // Leave center space for FAB
               if (i == 2) {
+                // Center slot reserved for FAB
                 return const Expanded(child: SizedBox());
               }
               final isSelected = _selectedTab == i;
               return Expanded(
                 child: GestureDetector(
-                  onTap: () => setState(() => _selectedTab = i),
+                  onTap: () {
+                    setState(() => _selectedTab = i);
+                    // ── WIRED: Upload tab (index 3 visually = i==3) ──
+                    // Tab index 3 = Profile; no upload tab shown (slot 2 = FAB)
+                    // If you want "Orders" tab to show orders screen, add nav here
+                  },
                   behavior: HitTestBehavior.opaque,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
