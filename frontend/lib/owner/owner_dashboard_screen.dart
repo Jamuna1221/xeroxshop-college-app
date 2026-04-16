@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'order_history_screen.dart';
+import 'print_queue_screen.dart';
 import 'services/owner_auth_service.dart';
 import '../screens/signin_screen.dart';
 
@@ -29,6 +31,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Widget build(BuildContext context) {
     final shopName  = _profile?['shopName']  as String? ?? 'Your Shop';
     final ownerName = _profile?['ownerName'] as String? ?? 'Owner';
+    final ownerId = _service.currentUser?.uid;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -122,7 +125,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   label: 'Print Queue',
                   color: const Color(0xFFE53935),
                   onTap: () {
-                    // TODO: navigate to print queue
+                    if (ownerId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PrintQueueScreen(ownerId: ownerId),
+                      ),
+                    );
                   },
                 ),
                 _OwnerCard(
@@ -130,7 +139,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   label: 'Orders',
                   color: const Color(0xFF26A69A),
                   onTap: () {
-                    // TODO: navigate to orders
+                    if (ownerId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => OrderHistoryScreen(ownerId: ownerId),
+                      ),
+                    );
                   },
                 ),
                 _OwnerCard(

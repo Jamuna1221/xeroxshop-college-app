@@ -24,9 +24,9 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../models/print_order_models.dart';
+import '../services/print_order_service.dart';
 
 // ── Pricing constants (₹) ─────────────────────────────────────────────────────
 const double kPricePerPageBW    = 1.0;
@@ -35,49 +35,6 @@ const double kLaminationFee     = 10.0;
 const double kGlossyFee         = 5.0;
 const double kSpiralBindingFee  = 30.0;
 const double kTapeBindingFee    = 30.0;
-
-// ── Model passed from UploadPrintScreen ───────────────────────────────────────
-class PrintOrderSummary {
-  final String filePath;
-  final String fileName;
-  final String fileSize;
-  final String pages;        // 'All' | 'Odd Pages Only' | 'Even Pages Only' | 'Custom Range'
-  final String layout;
-  final String paperSize;
-  final String perSheet;
-  final String margins;
-  final String scale;
-  final String quality;
-  final String printType;    // 'Black & White' | 'Color'
-  final bool doubleSide;
-  final bool staple;
-  final bool lamination;
-  final bool glossy;
-  final bool spiralBinding;
-  final bool tapeBinding;
-  final int copies;
-
-  const PrintOrderSummary({
-    required this.filePath,
-    required this.fileName,
-    required this.fileSize,
-    required this.pages,
-    required this.layout,
-    required this.paperSize,
-    required this.perSheet,
-    required this.margins,
-    required this.scale,
-    required this.quality,
-    required this.printType,
-    required this.doubleSide,
-    required this.staple,
-    required this.lamination,
-    required this.glossy,
-    required this.spiralBinding,
-    required this.tapeBinding,
-    required this.copies,
-  });
-}
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 class PaymentScreen extends StatefulWidget {
@@ -108,6 +65,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late Razorpay _razorpay;
   bool _paymentLoading = false;
   bool _paymentSuccess = false;
+  final _orderService = PrintOrderService();
 
   final _currency = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
 
@@ -127,11 +85,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
-    setState(() => _paymentSuccess = true);
-    await _saveOrderToFirestore(
-      paymentId: response.paymentId ?? 'N/A',
-      status: 'paid',
-    );
+    try {
+      await _orderService.createOrder(
+        summary: widget.order,
+        pageCount: _pageCount,
+        printCost: _printCost,
+        extrasCost: _extrasCost,
+        totalAmount: _total,
+        paymentId: response.paymentId ?? 'N/A',
+      );
+      if (!mounted) return;
+      setState(() {
+        _paymentLoading = false;
+        _paymentSuccess = true;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _paymentLoading = false);
+      _showBanner('Could not save order: $e', _red);
+      return;
+    }
+
     if (!mounted) return;
     _showBanner(
       '✅ Payment successful! Order placed.',
@@ -219,42 +193,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
     }
   }
 
-  // ── Firestore ────────────────────────────────────────────────────────────────
-  Future<void> _saveOrderToFirestore({
-    required String paymentId,
-    required String status,
-  }) async {
-    try {
-      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest';
-      await FirebaseFirestore.instance.collection('print_orders').add({
-        'userId'       : uid,
-        'fileName'     : widget.order.fileName,
-        'filePath'     : widget.order.filePath,
-        'pageCount'    : _pageCount,
-        'copies'       : widget.order.copies,
-        'printType'    : widget.order.printType,
-        'doubleSide'   : widget.order.doubleSide,
-        'layout'       : widget.order.layout,
-        'paperSize'    : widget.order.paperSize,
-        'perSheet'     : widget.order.perSheet,
-        'quality'      : widget.order.quality,
-        'staple'       : widget.order.staple,
-        'lamination'   : widget.order.lamination,
-        'glossy'       : widget.order.glossy,
-        'spiralBinding': widget.order.spiralBinding,
-        'tapeBinding'  : widget.order.tapeBinding,
-        'printCost'    : _printCost,
-        'extrasCost'   : _extrasCost,
-        'totalAmount'  : _total,
-        'paymentId'    : paymentId,
-        'status'       : status,
-        'createdAt'    : FieldValue.serverTimestamp(),
-      });
-    } catch (e) {
-      debugPrint('Firestore save error: $e');
-    }
-  }
-
   // ── Razorpay Checkout ────────────────────────────────────────────────────────
   void _startPayment() {
     setState(() => _paymentLoading = true);
@@ -270,7 +208,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       'currency'    : 'INR',
       'prefill'     : {
         'contact': '', // pre-fill from user profile if available
-        'email'  : FirebaseAuth.instance.currentUser?.email ?? '',
+        'email'  : _orderService.currentUser?.email ?? '',
       },
       'theme'       : {'color': '#E53935'},
     };
@@ -321,7 +259,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
     backgroundColor: Colors.white,
     elevation: 0,
     scrolledUnderElevation: 2,
-    shadowColor: Colors.black.withOpacity(0.08),
+    shadowColor: Colors.black.withValues(alpha: 0.08),
     automaticallyImplyLeading: true,
     iconTheme: const IconThemeData(color: _text),
     title: Column(
@@ -601,7 +539,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       borderRadius: BorderRadius.circular(16),
       boxShadow: [
         BoxShadow(
-            color: _red.withOpacity(0.4),
+            color: _red.withValues(alpha: 0.4),
             blurRadius: 18,
             offset: const Offset(0, 8)),
       ],
@@ -648,7 +586,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       borderRadius: BorderRadius.circular(18),
       boxShadow: [
         BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 14,
             offset: const Offset(0, 4)),
       ],

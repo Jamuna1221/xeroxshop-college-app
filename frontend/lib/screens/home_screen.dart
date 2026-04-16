@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../models/print_order_models.dart';
+import '../services/print_order_service.dart';
 
 // Import your upload print screen
 import 'upload_print_screen.dart';
@@ -16,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _selectedTab = 0;
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
+  final _orderService = PrintOrderService();
 
   @override
   void initState() {
@@ -164,22 +168,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ── Welcome Section ────────────────────────────────────────────────────────
   Widget _buildWelcomeSection() {
+    final userName = FirebaseAuth.instance.currentUser?.displayName?.trim();
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          RichText(
-            text: TextSpan(
+          Text.rich(
+            TextSpan(
               style: GoogleFonts.poppins(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF1A1A2E)),
-              children: const [
-                TextSpan(text: 'Welcome Back, '),
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1A1A2E),
+              ),
+              children: [
+                const TextSpan(text: 'Welcome Back, '),
                 TextSpan(
-                  text: 'Alex 👋',
-                  style: TextStyle(color: Color(0xFFE53935)),
+                  text: '${(userName == null || userName.isEmpty) ? 'User' : userName} 👋',
+                  style: const TextStyle(color: Color(0xFFE53935)),
                 ),
               ],
             ),
@@ -593,35 +599,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // ── Recent Orders ──────────────────────────────────────────────────────────
   Widget _buildRecentOrders() {
-    final orders = [
-      {
-        'file': 'Assignment_Final.pdf',
-        'status': 'Completed',
-        'statusColor': const Color(0xFF43A047),
-        'bgColor': const Color(0xFFE8F5E9),
-        'icon': Icons.check_circle_rounded,
-        'time': '2 hrs ago',
-        'pages': '12 pages',
-      },
-      {
-        'file': 'Notes_Chapter5.docx',
-        'status': 'Printing',
-        'statusColor': const Color(0xFFFF6F00),
-        'bgColor': const Color(0xFFFFF3E0),
-        'icon': Icons.autorenew_rounded,
-        'time': '10 min ago',
-        'pages': '8 pages',
-      },
-      {
-        'file': 'Lab_Report.pdf',
-        'status': 'Pending',
-        'statusColor': const Color(0xFFE53935),
-        'bgColor': const Color(0xFFFFEBEE),
-        'icon': Icons.schedule_rounded,
-        'time': 'Just now',
-        'pages': '5 pages',
-      },
-    ];
+    final userId = FirebaseAuth.instance.currentUser?.uid;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -644,110 +622,197 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ],
           ),
         ),
-        ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: orders.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 12),
-          itemBuilder: (context, i) {
-            final order = orders[i];
-            final statusColor = order['statusColor'] as Color;
-            final bgColor = order['bgColor'] as Color;
-            final icon = order['icon'] as IconData;
+        if (userId == null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Sign in to view your order history.',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+            ),
+          )
+        else
+          StreamBuilder<List<PrintOrderRecord>>(
+            stream: _orderService.watchUserOrders(userId),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    snapshot.error.toString(),
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.red[400],
+                    ),
+                  ),
+                );
+              }
+              if (!snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
 
-            return GestureDetector(
-              // ── WIRED: tapping a recent order re-opens upload screen ──
-              onTap: _goToUpload,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
+              final orders = snapshot.data!.take(5).toList();
+              if (orders.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFEBEE),
-                        borderRadius: BorderRadius.circular(12),
+                    child: Text(
+                      'No orders yet. Upload a file to create your first print request.',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.grey[600],
                       ),
-                      child: const Icon(Icons.picture_as_pdf_rounded,
-                          color: Color(0xFFE53935), size: 22),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(order['file'] as String,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF1A1A2E))),
-                          const SizedBox(height: 3),
-                          Row(
+                  ),
+                );
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: orders.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, i) {
+                  final order = orders[i];
+                  final statusColor = _statusColor(order.status);
+                  final bgColor = statusColor.withValues(alpha: 0.12);
+                  final icon = _statusIcon(order.status);
+                  final time = order.createdAt == null
+                      ? 'Just now'
+                      : _formatRelative(order.createdAt!);
+
+                  return Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFEBEE),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.picture_as_pdf_rounded,
+                              color: Color(0xFFE53935), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(order['pages'] as String,
+                              Text(order.fileName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      color: Colors.grey[500])),
-                              const SizedBox(width: 8),
-                              Text('•',
-                                  style: TextStyle(
-                                      color: Colors.grey[400],
-                                      fontSize: 11)),
-                              const SizedBox(width: 8),
-                              Text(order['time'] as String,
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      color: Colors.grey[500])),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF1A1A2E))),
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  Text('${order.pageCount} pages',
+                                      style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          color: Colors.grey[500])),
+                                  const SizedBox(width: 8),
+                                  Text('•',
+                                      style: TextStyle(
+                                          color: Colors.grey[400],
+                                          fontSize: 11)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(time,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            color: Colors.grey[500])),
+                                  ),
+                                ],
+                              ),
                             ],
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: bgColor,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(icon, color: statusColor, size: 12),
+                              const SizedBox(width: 4),
+                              Text(order.statusLabel,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: statusColor)),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: bgColor,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(icon, color: statusColor, size: 12),
-                          const SizedBox(width: 4),
-                          Text(order['status'] as String,
-                              style: GoogleFonts.poppins(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: statusColor)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
+                  );
+                },
+              );
+            },
+          ),
         const SizedBox(height: 20),
       ],
     );
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case PrintOrderStatus.completed:
+        return const Color(0xFF43A047);
+      case PrintOrderStatus.processing:
+        return const Color(0xFFFF6F00);
+      default:
+        return const Color(0xFFE53935);
+    }
+  }
+
+  IconData _statusIcon(String status) {
+    switch (status) {
+      case PrintOrderStatus.completed:
+        return Icons.check_circle_rounded;
+      case PrintOrderStatus.processing:
+        return Icons.autorenew_rounded;
+      default:
+        return Icons.schedule_rounded;
+    }
+  }
+
+  String _formatRelative(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
+    if (diff.inDays < 1) return '${diff.inHours} hrs ago';
+    return '${diff.inDays} days ago';
   }
 
   // ── FAB ────────────────────────────────────────────────────────────────────

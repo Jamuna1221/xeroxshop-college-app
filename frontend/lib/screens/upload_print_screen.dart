@@ -6,9 +6,10 @@ import 'package:flutter/foundation.dart'; // for kIsWeb
 import 'package:file_picker/file_picker.dart';  // ← MISSING IMPORT
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
+import '../models/print_order_models.dart';
 import 'payment_screen.dart';
-// ── Model ─────────────────────────────────────────────────────────────────────
 
+// ── Model ─────────────────────────────────────────────────────────────────────
 class UploadedFile {
   final String name;
   final String size;
@@ -21,8 +22,6 @@ class UploadedFile {
     required this.path,
   });
 }
-
-// ── Screen ────────────────────────────────────────────────────────────────────
 
 class UploadPrintScreen extends StatefulWidget {
   const UploadPrintScreen({super.key});
