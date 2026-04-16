@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart'; // for kIsWeb
 import 'package:file_picker/file_picker.dart';  // ← MISSING IMPORT
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
-
+import 'payment_screen.dart';
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 class UploadedFile {
@@ -220,29 +220,33 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
 
   Future<void> _submitOrder() async {
     if (_file == null) return;
-    setState(() => _submitted = true);
-    // TODO: Replace with your real Firebase Storage upload
-    await Future.delayed(const Duration(seconds: 3));
-    if (!mounted) return;
-    setState(() => _submitted = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-            const SizedBox(width: 10),
-            Text('Print job submitted successfully!',
-                style: GoogleFonts.poppins(fontSize: 13)),
-          ],
-        ),
-        backgroundColor: const Color(0xFF43A047),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      ),
+
+    final order = PrintOrderSummary(
+      filePath      : _file!.path,
+      fileName      : _file!.name,
+      fileSize      : _file!.size,
+      pages         : _pages,
+      layout        : _layout,
+      paperSize     : _paperSize,
+      perSheet      : _perSheet,
+      margins       : _margins,
+      scale         : _scale,
+      quality       : _quality,
+      printType     : _printType,
+      doubleSide    : _doubleSide,
+      staple        : _staple,
+      lamination    : _lamination,
+      glossy        : _glossy,
+      spiralBinding : _spiralBinding,
+      tapeBinding   : _tapeBinding,
+      copies        : _copies,
+    );
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PaymentScreen(order: order)),
     );
   }
-
   // ── Build ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
