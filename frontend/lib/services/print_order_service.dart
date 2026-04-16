@@ -1,19 +1,26 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/print_order_models.dart';
 
 class PrintOrderService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   CollectionReference<Map<String, dynamic>> get _orders =>
       _firestore.collection('print_orders');
+
+  // Supabase Storage config (public bucket + anon uploads).
+  // NOTE: this is NOT the service role key.
+  static const String _supabaseUrl = 'https://bkfwujraxqpotoehpunz.supabase.co';
+  static const String _supabaseAnonKey =
+      'sb_publishable_4lDqq4TNfNi7LR4lWJ1VcQ_RRcdc1f0';
+  static const String _supabaseBucket = 'print-files';
 
   Future<Map<String, dynamic>> _getDefaultOwner() async {
     final query = await _firestore
@@ -49,25 +56,49 @@ class PrintOrderService {
     final storagePath =
         'print_orders/$userId/${DateTime.now().millisecondsSinceEpoch}_$sanitizedName';
 
-    final ref = _storage.ref().child(storagePath);
+    final encodedPath = storagePath
+        .split('/')
+        .map((s) => Uri.encodeComponent(s))
+        .join('/');
 
-    try {
-      final snapshot = await ref.putFile(file);
-      final downloadUrl = await snapshot.ref.getDownloadURL();
+    // Upload to Supabase Storage (public bucket write via anon).
+    final uploadUrl =
+        '$_supabaseUrl/storage/v1/object/$_supabaseBucket/$encodedPath';
 
-      return {
-        'storagePath': snapshot.ref.fullPath,
-        'downloadUrl': downloadUrl,
-      };
-    } on FirebaseException catch (e) {
-      if (e.code == 'object-not-found') {
-        throw Exception(
-          'Upload finished but download URL was not available. '
-          'Please make sure Firebase Storage is enabled for this project, then try again.',
-        );
-      }
-      rethrow;
+    final bytes = await file.readAsBytes();
+    final contentType = _guessContentType(sanitizedName);
+
+    final resp = await http.post(
+      Uri.parse(uploadUrl),
+      headers: {
+        // Supabase Storage API expects `apikey` header.
+        'apikey': _supabaseAnonKey,
+        'Content-Type': contentType,
+      },
+      body: bytes,
+    );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception(
+        'Supabase upload failed (${resp.statusCode}): ${resp.body}',
+      );
     }
+
+    // Public objects can be accessed via the conventional public URL format.
+    final downloadUrl =
+        '$_supabaseUrl/storage/v1/object/public/$_supabaseBucket/$encodedPath';
+
+    // Supabase returns a JSON like: {"Key":"bucket/path",...} on success.
+    // We rely on our known `storagePath` and computed public URL.
+    final decoded = jsonDecode(resp.body.isEmpty ? '{}' : resp.body);
+    final keyFromServer = (decoded is Map && decoded['Key'] != null)
+        ? decoded['Key'].toString()
+        : storagePath;
+
+    return {
+      'storagePath': keyFromServer,
+      'downloadUrl': downloadUrl,
+    };
   }
 
   Future<String> createOrder({
@@ -209,12 +240,13 @@ class PrintOrderService {
   }
 
   Future<Uint8List> downloadPdfBytes(String url) async {
-    final ref = _storage.refFromURL(url);
-    final data = await ref.getData();
-    if (data == null) {
-      throw Exception('Could not download the file for printing.');
+    final resp = await http.get(Uri.parse(url));
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      throw Exception(
+        'Could not download file. (${resp.statusCode})',
+      );
     }
-    return data;
+    return resp.bodyBytes;
   }
 
   List<PrintOrderRecord> _mapRecords(
@@ -224,4 +256,19 @@ class PrintOrderService {
   }
 
   User? get currentUser => _auth.currentUser;
+
+  String _guessContentType(String fileName) {
+    final ext = fileName.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'pdf':
+        return 'application/pdf';
+      case 'png':
+        return 'image/png';
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      default:
+        return 'application/octet-stream';
+    }
+  }
 }
