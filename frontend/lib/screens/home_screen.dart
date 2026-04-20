@@ -1,11 +1,13 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+
 import '../models/print_order_models.dart';
 import '../services/print_order_service.dart';
-
-// Import your upload print screen
 import 'upload_print_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,43 +23,194 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _fadeAnim;
   final _orderService = PrintOrderService();
 
+  final List<_OrderNotification> _notifications = [];
+  final Map<String, String> _knownStatuses = {};
+  StreamSubscription<List<PrintOrderRecord>>? _ordersSub;
+  bool _didInitialStatusLoad = false;
+
   @override
   void initState() {
     super.initState();
     _fadeCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 450),
     );
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fadeCtrl.forward();
+    _startOrderStatusListener();
   }
 
   @override
   void dispose() {
+    _ordersSub?.cancel();
     _fadeCtrl.dispose();
     super.dispose();
   }
 
-  // ── Navigate to Upload Screen ──────────────────────────────────────────────
+  void _startOrderStatusListener() {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return;
+
+    _ordersSub = _orderService.watchUserOrders(userId).listen((orders) {
+      final latest = <String, String>{for (final o in orders) o.id: o.status};
+
+      if (!_didInitialStatusLoad) {
+        _knownStatuses
+          ..clear()
+          ..addAll(latest);
+        _didInitialStatusLoad = true;
+        return;
+      }
+
+      for (final order in orders) {
+        final prev = _knownStatuses[order.id];
+        if (prev == null || prev == order.status) continue;
+
+        if (order.status == PrintOrderStatus.processing ||
+            order.status == PrintOrderStatus.completed) {
+          _notifications.insert(
+            0,
+            _OrderNotification(
+              title: order.status == PrintOrderStatus.processing
+                  ? 'Order started processing'
+                  : 'Order completed',
+              body: '${order.fileName} is now ${order.statusLabel.toLowerCase()}.',
+              createdAt: DateTime.now(),
+            ),
+          );
+        }
+      }
+
+      _knownStatuses
+        ..clear()
+        ..addAll(latest);
+
+      if (mounted) setState(() {});
+    });
+  }
+
+  int get _unreadCount => _notifications.where((n) => !n.read).length;
+
+  void _openNotificationsSheet() {
+    setState(() {
+      for (final n in _notifications) {
+        n.read = true;
+      }
+    });
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.6,
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 44,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
+                child: Row(
+                  children: [
+                    Text(
+                      'Notifications',
+                      style: GoogleFonts.poppins(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A1A2E),
+                      ),
+                    ),
+                    const Spacer(),
+                    if (_notifications.isNotEmpty)
+                      TextButton(
+                        onPressed: () => setState(_notifications.clear),
+                        child: Text(
+                          'Clear',
+                          style: GoogleFonts.poppins(color: const Color(0xFFE53935)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: _notifications.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No notifications yet.',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _notifications.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 10),
+                        itemBuilder: (context, i) {
+                          final n = _notifications[i];
+                          return Container(
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6F7FB),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  n.title,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF1A1A2E),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  n.body,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatRelative(n.createdAt),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _goToUpload() {
     Navigator.push(
       context,
-      PageRouteBuilder(
-        pageBuilder: (_, animation, __) => const UploadPrintScreen(),
-        transitionsBuilder: (_, animation, __, child) {
-          return SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(1.0, 0.0),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-            )),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 380),
-      ),
+      MaterialPageRoute(builder: (_) => const UploadPrintScreen()),
     );
   }
 
@@ -73,19 +226,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       appBar: _buildAppBar(),
       body: FadeTransition(
         opacity: _fadeAnim,
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 100),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildWelcomeSection(),
-              _buildUploadCard(),       // tapping "Upload Now" → UploadPrintScreen
-              _buildQuickOptions(),     // tapping "Custom Print" → UploadPrintScreen
-              _buildNearbyShops(),
-              _buildRecentOrders(),
-            ],
-          ),
+        child: IndexedStack(
+          index: _selectedTab,
+          children: [
+            _buildHomeTab(),
+            _buildOrdersTab(),
+            const SizedBox.shrink(),
+            _buildProfileTab(),
+          ],
         ),
       ),
       floatingActionButton: _buildFAB(),
@@ -94,13 +242,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── App Bar ────────────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
       backgroundColor: Colors.white,
       elevation: 0,
       scrolledUnderElevation: 2,
-      shadowColor: Colors.black.withOpacity(0.08),
+      shadowColor: Colors.black.withValues(alpha: 0.08),
       automaticallyImplyLeading: false,
       title: Row(
         children: [
@@ -128,28 +275,42 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Stack(
           children: [
             IconButton(
-              icon: const Icon(Icons.notifications_none_rounded,
-                  color: Color(0xFF1A1A2E), size: 26),
-              onPressed: () {},
+              icon: const Icon(
+                Icons.notifications_none_rounded,
+                color: Color(0xFF1A1A2E),
+                size: 26,
+              ),
+              onPressed: _openNotificationsSheet,
             ),
-            Positioned(
-              right: 10,
-              top: 10,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFE53935),
-                  shape: BoxShape.circle,
+            if (_unreadCount > 0)
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE53935),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      _unreadCount > 9 ? '9+' : '$_unreadCount',
+                      style: GoogleFonts.poppins(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
           ],
         ),
         Padding(
           padding: const EdgeInsets.only(right: 12),
           child: GestureDetector(
-            onTap: () {},
+            onTap: () => setState(() => _selectedTab = 3),
             child: Container(
               width: 38,
               height: 38,
@@ -157,8 +318,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 color: const Color(0xFFFFEBEE),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.person_rounded,
-                  color: Color(0xFFE53935), size: 22),
+              child: const Icon(Icons.person_rounded, color: Color(0xFFE53935), size: 22),
             ),
           ),
         ),
@@ -166,7 +326,170 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Welcome Section ────────────────────────────────────────────────────────
+  Widget _buildHomeTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 100),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildWelcomeSection(),
+          _buildUploadCard(),
+          _buildQuickOptions(),
+          _buildRecentOrdersSection(limit: 5, showHeader: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrdersTab() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 100),
+      child: _buildRecentOrdersSection(limit: null, showHeader: false),
+    );
+  }
+
+  Widget _buildProfileTab() {
+    final user = FirebaseAuth.instance.currentUser;
+    final userId = user?.uid;
+
+    if (userId == null) {
+      return Center(
+        child: Text(
+          'Please sign in.',
+          style: GoogleFonts.poppins(color: Colors.grey[700]),
+        ),
+      );
+    }
+    final safeUser = user!;
+
+    return StreamBuilder<List<PrintOrderRecord>>(
+      stream: _orderService.watchUserOrders(userId),
+      builder: (context, snapshot) {
+        final orders = snapshot.data ?? const <PrintOrderRecord>[];
+        final totalSpent = orders.fold<double>(0, (acc, o) => acc + o.totalAmount);
+        final completed = orders.where((o) => o.isCompleted).length;
+        final processing = orders.where((o) => o.isProcessing).length;
+        final currency = NumberFormat.currency(locale: 'en_IN', symbol: 'Rs ');
+        final displayName = safeUser.displayName?.trim();
+        final safeName =
+            (displayName == null || displayName.isEmpty) ? 'User' : displayName;
+        final safeEmail = safeUser.email ?? 'No email';
+        final safeUid = safeUser.uid;
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 100),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.person_rounded, color: Color(0xFFE53935)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          safeName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1A1A2E),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          safeEmail,
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            _profileCard(
+              title: 'Spendings',
+              value: currency.format(totalSpent),
+              subtitle: 'Total spent on all your print orders',
+            ),
+            const SizedBox(height: 10),
+            _profileCard(
+              title: 'Total Orders',
+              value: '${orders.length}',
+              subtitle: '$completed completed • $processing processing',
+            ),
+            const SizedBox(height: 10),
+            _profileCard(
+              title: 'Account ID',
+              value: safeUid,
+              subtitle: 'Your Firebase account identifier',
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _profileCard({
+    required String title,
+    required String value,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A1A2E),
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWelcomeSection() {
     final userName = FirebaseAuth.instance.currentUser?.displayName?.trim();
     return Padding(
@@ -200,160 +523,77 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Upload Card ────────────────────────────────────────────────────────────
   Widget _buildUploadCard() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFFE53935), Color(0xFFEF5350)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      child: GestureDetector(
+        onTap: _goToUpload,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE53935), Color(0xFFEF5350)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFE53935).withValues(alpha: 0.38),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFFE53935).withOpacity(0.38),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Stack(
-          children: [
-            // Decorative circles
-            Positioned(
-              right: -20,
-              top: -20,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Positioned(
-              right: 30,
-              bottom: -30,
-              child: Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.06),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(22),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(Icons.upload_file_rounded,
-                              color: Colors.white, size: 28),
-                        ),
-                        const SizedBox(height: 14),
-                        Text(
-                          'Upload Document',
-                          style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'PDF, Image, Word Docs',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.8)),
-                        ),
-                        const SizedBox(height: 18),
-                        // ── WIRED: navigates to UploadPrintScreen ──
-                        GestureDetector(
-                          onTap: _goToUpload,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 22, vertical: 11),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.12),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: Text(
-                              'Upload Now',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFFE53935)),
-                            ),
-                          ),
-                        ),
-                      ],
+          padding: const EdgeInsets.all(22),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(Icons.upload_file_rounded, color: Colors.white, size: 28),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    children: [
-                      const SizedBox(height: 10),
-                      Icon(Icons.description_rounded,
-                          color: Colors.white.withOpacity(0.3), size: 80),
-                    ],
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    Text(
+                      'Upload Document',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'PDF, Image, Word Docs',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.8),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              Icon(Icons.description_rounded, color: Colors.white.withValues(alpha: 0.3), size: 78),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ── Quick Options ──────────────────────────────────────────────────────────
   Widget _buildQuickOptions() {
     final options = [
-      {
-        'icon': Icons.print_rounded,
-        'label': 'B&W Print',
-        'color': const Color(0xFF37474F),
-        'navigate': true,
-      },
-      {
-        'icon': Icons.color_lens_rounded,
-        'label': 'Color Print',
-        'color': const Color(0xFF1E88E5),
-        'navigate': true,
-      },
-      {
-        'icon': Icons.content_copy_rounded,
-        'label': 'Multiple Copies',
-        'color': const Color(0xFF43A047),
-        'navigate': true,
-      },
-      {
-        'icon': Icons.tune_rounded,
-        'label': 'Custom Print',
-        'color': const Color(0xFFE53935),
-        'navigate': true,
-      },
+      {'icon': Icons.print_rounded, 'label': 'B&W Print', 'color': const Color(0xFF37474F)},
+      {'icon': Icons.color_lens_rounded, 'label': 'Color Print', 'color': const Color(0xFF1E88E5)},
+      {'icon': Icons.content_copy_rounded, 'label': 'Multiple Copies', 'color': const Color(0xFF43A047)},
+      {'icon': Icons.tune_rounded, 'label': 'Custom Print', 'color': const Color(0xFFE53935)},
     ];
 
     return Column(
@@ -364,18 +604,24 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Quick Options',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1A1A2E))),
+              Text(
+                'Quick Options',
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1A1A2E),
+                ),
+              ),
               GestureDetector(
                 onTap: _goToUpload,
-                child: Text('See all',
-                    style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        color: const Color(0xFFE53935),
-                        fontWeight: FontWeight.w500)),
+                child: Text(
+                  'See all',
+                  style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    color: const Color(0xFFE53935),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ],
           ),
@@ -396,7 +642,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               final opt = options[i];
               final color = opt['color'] as Color;
               return GestureDetector(
-                // ── WIRED: all quick options open UploadPrintScreen ──
                 onTap: _goToUpload,
                 child: Container(
                   decoration: BoxDecoration(
@@ -404,33 +649,32 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
+                        color: Colors.black.withValues(alpha: 0.06),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   child: Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(9),
                         decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
+                          color: color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(opt['icon'] as IconData,
-                            color: color, size: 22),
+                        child: Icon(opt['icon'] as IconData, color: color, size: 22),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
                           opt['label'] as String,
                           style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF1A1A2E)),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF1A1A2E),
+                          ),
                         ),
                       ),
                     ],
@@ -444,189 +688,57 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Nearby Shops ───────────────────────────────────────────────────────────
-  Widget _buildNearbyShops() {
-    final shops = [
-      {'name': 'PrintZone', 'dist': '0.3 km', 'rating': '4.8', 'open': true},
-      {'name': 'QuickPrint', 'dist': '0.7 km', 'rating': '4.5', 'open': true},
-      {'name': 'XeroxHub', 'dist': '1.2 km', 'rating': '4.2', 'open': false},
-      {'name': 'FastCopy', 'dist': '1.8 km', 'rating': '4.6', 'open': true},
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Nearby Shops',
-                  style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1A1A2E))),
-              Text('View Map',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: const Color(0xFFE53935),
-                      fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 148,
-          child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            itemCount: shops.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (context, i) {
-              final shop = shops[i];
-              final isOpen = shop['open'] as bool;
-              return Container(
-                width: 160,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFEBEE),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.store_rounded,
-                              color: Color(0xFFE53935), size: 18),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: isOpen
-                                ? const Color(0xFFE8F5E9)
-                                : const Color(0xFFFCE4EC),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            isOpen ? 'Open' : 'Closed',
-                            style: GoogleFonts.poppins(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: isOpen
-                                  ? Colors.green
-                                  : const Color(0xFFE53935),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(shop['name'] as String,
-                        style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1A1A2E))),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Icon(Icons.location_on_rounded,
-                            color: Colors.grey[400], size: 12),
-                        const SizedBox(width: 2),
-                        Text(shop['dist'] as String,
-                            style: GoogleFonts.poppins(
-                                fontSize: 11, color: Colors.grey[500])),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.star_rounded,
-                            color: Color(0xFFFFC107), size: 12),
-                        const SizedBox(width: 2),
-                        Text(shop['rating'] as String,
-                            style: GoogleFonts.poppins(
-                                fontSize: 11, color: Colors.grey[500])),
-                      ],
-                    ),
-                    const Spacer(),
-                    SizedBox(
-                      width: double.infinity,
-                      child: TextButton(
-                        // ── WIRED: Select shop → go to upload screen ──
-                        onPressed: isOpen ? _goToUpload : null,
-                        style: TextButton.styleFrom(
-                          backgroundColor: isOpen
-                              ? const Color(0xFFE53935)
-                              : Colors.grey[200],
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          padding: const EdgeInsets.symmetric(vertical: 6),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: Text(
-                          'Select',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color:
-                                isOpen ? Colors.white : Colors.grey[400],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── Recent Orders ──────────────────────────────────────────────────────────
-  Widget _buildRecentOrders() {
+  Widget _buildRecentOrdersSection({int? limit, required bool showHeader}) {
     final userId = FirebaseAuth.instance.currentUser?.uid;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Recent Orders',
+        if (showHeader)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Recent Orders',
                   style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1A1A2E))),
-              Text('View All',
-                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF1A1A2E),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => _selectedTab = 1),
+                  child: Text(
+                    'View All',
+                    style: GoogleFonts.poppins(
                       fontSize: 13,
                       color: const Color(0xFFE53935),
-                      fontWeight: FontWeight.w500)),
-            ],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+            child: Text(
+              'My Orders',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1A1A2E),
+              ),
+            ),
           ),
-        ),
         if (userId == null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Text(
-              'Sign in to view your order history.',
+              'Sign in to view your orders.',
               style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
             ),
           )
@@ -639,10 +751,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
                     snapshot.error.toString(),
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.red[400],
-                    ),
+                    style: GoogleFonts.poppins(fontSize: 12, color: Colors.red[400]),
                   ),
                 );
               }
@@ -653,7 +762,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 );
               }
 
-              final orders = snapshot.data!.take(5).toList();
+              final src = snapshot.data!;
+              final orders = limit == null ? src : src.take(limit).toList();
               if (orders.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -666,10 +776,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                     child: Text(
                       'No orders yet. Upload a file to create your first print request.',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
+                      style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
                     ),
                   ),
                 );
@@ -680,7 +787,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: orders.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
                 itemBuilder: (context, i) {
                   final order = orders[i];
                   final statusColor = _statusColor(order.status);
@@ -696,7 +803,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
+                          color: Colors.black.withValues(alpha: 0.05),
                           blurRadius: 10,
                           offset: const Offset(0, 3),
                         ),
@@ -712,40 +819,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             color: const Color(0xFFFFEBEE),
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Icon(Icons.picture_as_pdf_rounded,
-                              color: Color(0xFFE53935), size: 22),
+                          child: const Icon(Icons.picture_as_pdf_rounded, color: Color(0xFFE53935), size: 22),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(order.fileName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF1A1A2E))),
+                              Text(
+                                order.fileName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF1A1A2E),
+                                ),
+                              ),
                               const SizedBox(height: 3),
                               Row(
                                 children: [
-                                  Text('${order.pageCount} pages',
-                                      style: GoogleFonts.poppins(
-                                          fontSize: 11,
-                                          color: Colors.grey[500])),
+                                  Text(
+                                    '${order.pageCount} pages',
+                                    style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+                                  ),
                                   const SizedBox(width: 8),
-                                  Text('•',
-                                      style: TextStyle(
-                                          color: Colors.grey[400],
-                                          fontSize: 11)),
+                                  Text('•', style: TextStyle(color: Colors.grey[400], fontSize: 11)),
                                   const SizedBox(width: 8),
                                   Expanded(
-                                    child: Text(time,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: GoogleFonts.poppins(
-                                            fontSize: 11,
-                                            color: Colors.grey[500])),
+                                    child: Text(
+                                      time,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+                                    ),
                                   ),
                                 ],
                               ),
@@ -754,8 +860,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
                             color: bgColor,
                             borderRadius: BorderRadius.circular(20),
@@ -765,11 +870,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                             children: [
                               Icon(icon, color: statusColor, size: 12),
                               const SizedBox(width: 4),
-                              Text(order.statusLabel,
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: statusColor)),
+                              Text(
+                                order.statusLabel,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: statusColor,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -815,7 +923,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return '${diff.inDays} days ago';
   }
 
-  // ── FAB ────────────────────────────────────────────────────────────────────
   Widget _buildFAB() {
     return Container(
       width: 56,
@@ -829,14 +936,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE53935).withOpacity(0.45),
+            color: const Color(0xFFE53935).withValues(alpha: 0.45),
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
         ],
       ),
       child: FloatingActionButton(
-        // ── WIRED: FAB + button → UploadPrintScreen ──
         onPressed: _goToUpload,
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -845,7 +951,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Bottom Nav ─────────────────────────────────────────────────────────────
   Widget _buildBottomNav() {
     final tabs = [
       {'icon': Icons.home_rounded, 'label': 'Home'},
@@ -859,7 +964,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -871,19 +976,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(
             children: List.generate(tabs.length, (i) {
-              if (i == 2) {
-                // Center slot reserved for FAB
-                return const Expanded(child: SizedBox());
-              }
+              if (i == 2) return const Expanded(child: SizedBox());
               final isSelected = _selectedTab == i;
               return Expanded(
                 child: GestureDetector(
-                  onTap: () {
-                    setState(() => _selectedTab = i);
-                    // ── WIRED: Upload tab (index 3 visually = i==3) ──
-                    // Tab index 3 = Profile; no upload tab shown (slot 2 = FAB)
-                    // If you want "Orders" tab to show orders screen, add nav here
-                  },
+                  onTap: () => setState(() => _selectedTab = i),
                   behavior: HitTestBehavior.opaque,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -892,16 +989,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         duration: const Duration(milliseconds: 200),
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFFFFEBEE)
-                              : Colors.transparent,
+                          color: isSelected ? const Color(0xFFFFEBEE) : Colors.transparent,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
                           tabs[i]['icon'] as IconData,
-                          color: isSelected
-                              ? const Color(0xFFE53935)
-                              : Colors.grey[400],
+                          color: isSelected ? const Color(0xFFE53935) : Colors.grey[400],
                           size: 22,
                         ),
                       ),
@@ -910,12 +1003,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         tabs[i]['label'] as String,
                         style: GoogleFonts.poppins(
                           fontSize: 10,
-                          fontWeight: isSelected
-                              ? FontWeight.w600
-                              : FontWeight.w400,
-                          color: isSelected
-                              ? const Color(0xFFE53935)
-                              : Colors.grey[400],
+                          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                          color: isSelected ? const Color(0xFFE53935) : Colors.grey[400],
                         ),
                       ),
                     ],
@@ -929,3 +1018,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 }
+
+class _OrderNotification {
+  final String title;
+  final String body;
+  final DateTime createdAt;
+  bool read = false;
+
+  _OrderNotification({
+    required this.title,
+    required this.body,
+    required this.createdAt,
+  });
+}
+
