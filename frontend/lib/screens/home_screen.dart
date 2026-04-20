@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../models/print_order_models.dart';
 import '../services/print_order_service.dart';
+import 'signin_screen.dart';
 import 'upload_print_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -211,6 +212,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const UploadPrintScreen()),
+    );
+  }
+
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const SignInScreen()),
+      (route) => false,
     );
   }
 
@@ -442,6 +453,26 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               title: 'Account ID',
               value: safeUid,
               subtitle: 'Your Firebase account identifier',
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _logout,
+                icon: const Icon(Icons.logout_rounded),
+                label: Text(
+                  'Log Out',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFE53935),
+                  side: const BorderSide(color: Color(0xFFE53935)),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
             ),
           ],
         );
