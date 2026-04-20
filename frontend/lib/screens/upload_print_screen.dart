@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'; // for kIsWeb
 import 'package:file_picker/file_picker.dart';  // ← MISSING IMPORT
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
+import '../services/print_order_service.dart';
 import '../models/print_order_models.dart';
 import 'payment_screen.dart';
 
@@ -75,6 +76,8 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
 
   // Submit state
   bool _submitted = false;
+
+  final _orderService = PrintOrderService();
 
   @override
   void initState() {
@@ -167,7 +170,6 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
     if (mounted) setState(() => _isPickingFile = false);
   }
 }
-
   String _resolvePlatformError(String code) {
     switch (code) {
       case 'read_external_storage_denied':
@@ -256,48 +258,161 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
     return Scaffold(
       backgroundColor: _bg,
       appBar: _buildAppBar(),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildUploadSection(),
-            FadeTransition(
-              opacity: _revealAnim,
-              child: SizeTransition(
-                sizeFactor: _revealAnim,
-                child: _file != null
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildPrintSideCard(),
-                          _buildSettingsCard(),
-                          _buildExtraOptionsCard(),
-                          _buildBindingCard(),
-                          _buildCopiesCard(),
-                          _buildUploadButton(),
-                          const SizedBox(height: 10),
-                          Center(
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 24),
-                              child: Text(
-                                'Your document is sent securely.\nOrder confirmation via email.',
-                                textAlign: TextAlign.center,
-                                style: GoogleFonts.poppins(
-                                    fontSize: 11, color: Colors.grey[500]),
+      body: StreamBuilder<Map<String, dynamic>?>(
+        stream: _orderService.watchDefaultOwnerShopSettings(),
+        builder: (context, shopSnap) {
+          final shop = shopSnap.data;
+          final shopOpen = (shop?['shopOpen'] as bool?) ?? true;
+          final closedMsg =
+              (shop?['shopClosedMessage'] ?? 'Shop is temporarily closed.')
+                  .toString()
+                  .trim();
+          final rawOos = shop?['outOfStock'];
+          final oos = (rawOos is Map)
+              ? rawOos.map((k, v) => MapEntry(k.toString(), v == true))
+              : <String, bool>{};
+
+          bool selectedUnavailable() {
+            if (_printType == 'Color' && (oos['color'] == true)) return true;
+            if (_lamination && (oos['lamination'] == true)) return true;
+            if (_glossy && (oos['glossy'] == true)) return true;
+            if (_spiralBinding && (oos['spiralBinding'] == true)) return true;
+            if (_tapeBinding && (oos['tapeBinding'] == true)) return true;
+            return false;
+          }
+
+          final canProceed = shopOpen && !selectedUnavailable();
+
+          return SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.only(bottom: 32),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!shopOpen)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _statusBanner(
+                      icon: Icons.lock_clock_rounded,
+                      title: 'Shop Closed',
+                      message: closedMsg.isEmpty
+                          ? 'Shop is temporarily closed.'
+                          : closedMsg,
+                      color: _red,
+                    ),
+                  ),
+                if (shopOpen && oos.values.any((v) => v))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: _statusBanner(
+                      icon: Icons.info_outline_rounded,
+                      title: 'Limited services',
+                      message:
+                          'Some services are temporarily unavailable. Unavailable options will be blocked.',
+                      color: const Color(0xFFEF6C00),
+                    ),
+                  ),
+                _buildUploadSection(),
+                FadeTransition(
+                  opacity: _revealAnim,
+                  child: SizeTransition(
+                    sizeFactor: _revealAnim,
+                    child: _file != null
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildPrintSideCard(),
+                              _buildSettingsCard(),
+                              _buildExtraOptionsCard(),
+                              _buildBindingCard(),
+                              _buildCopiesCard(),
+                              _buildUploadButton(canProceed: canProceed),
+                              if (!canProceed)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                                  child: Text(
+                                    !shopOpen
+                                        ? 'Shop is closed. Please try later.'
+                                        : 'One or more selected options are currently out of stock.',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: Colors.red[400],
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              const SizedBox(height: 10),
+                              Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24),
+                                  child: Text(
+                                    'Your document is sent securely.\nOrder confirmation via email.',
+                                    textAlign: TextAlign.center,
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 11,
+                                        color: Colors.grey[500]),
+                                  ),
+                                ),
                               ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                      )
-                    : const SizedBox.shrink(),
-              ),
+                              const SizedBox(height: 24),
+                            ],
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _statusBanner({
+    required IconData icon,
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700,
+                    color: _text,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  message,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: Colors.grey[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -736,7 +851,7 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
   }
 
   // ── Upload Button ─────────────────────────────────────────────────────────────
-  Widget _buildUploadButton() {
+  Widget _buildUploadButton({required bool canProceed}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
       child: AnimatedContainer(
@@ -761,7 +876,7 @@ class _UploadPrintScreenState extends State<UploadPrintScreen>
           ],
         ),
         child: TextButton(
-          onPressed: _submitted ? null : _submitOrder,
+          onPressed: (_submitted || !canProceed) ? null : _submitOrder,
           style: TextButton.styleFrom(
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 17),

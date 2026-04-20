@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'order_history_screen.dart';
+import 'earnings_screen.dart';
 import 'print_queue_screen.dart';
+import 'shop_settings_screen.dart';
 import 'services/owner_auth_service.dart';
 import '../screens/signin_screen.dart';
 
@@ -153,7 +155,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   label: 'Earnings',
                   color: const Color(0xFFF57C00),
                   onTap: () {
-                    // TODO: navigate to earnings
+                    if (ownerId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EarningsScreen(ownerId: ownerId),
+                      ),
+                    );
                   },
                 ),
                 _OwnerCard(
@@ -161,7 +169,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   label: 'Shop Settings',
                   color: const Color(0xFF8D6E63),
                   onTap: () {
-                    // TODO: navigate to shop settings
+                    if (ownerId == null) return;
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ShopSettingsScreen(ownerId: ownerId),
+                      ),
+                    );
                   },
                 ),
               ],

@@ -65,6 +65,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
   late Razorpay _razorpay;
   bool _paymentLoading = false;
   bool _paymentSuccess = false;
+  String? _orderId;
   final _orderService = PrintOrderService();
 
   final _currency = NumberFormat.currency(locale: 'en_IN', symbol: '₹');
@@ -86,7 +87,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
   void _onPaymentSuccess(PaymentSuccessResponse response) async {
     try {
-      await _orderService.createOrder(
+      final orderId = await _orderService.createOrder(
         summary: widget.order,
         pageCount: _pageCount,
         printCost: _printCost,
@@ -98,6 +99,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       setState(() {
         _paymentLoading = false;
         _paymentSuccess = true;
+        _orderId = orderId;
       });
     } catch (e) {
       if (!mounted) return;
@@ -330,6 +332,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
           Text('Your print job has been submitted successfully.\nYou will receive a confirmation email shortly.',
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[600])),
+          const SizedBox(height: 18),
+          if (_orderId != null)
+            _QueuePositionCard(orderId: _orderId!, service: _orderService),
           const SizedBox(height: 32),
           SizedBox(
             width: double.infinity,
@@ -624,4 +629,83 @@ class _PaymentScreenState extends State<PaymentScreen> {
             fontWeight: FontWeight.w600,
             color: accent ? _red : Colors.grey[700])),
   );
+}
+
+class _QueuePositionCard extends StatelessWidget {
+  final String orderId;
+  final PrintOrderService service;
+  const _QueuePositionCard({required this.orderId, required this.service});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<PrintOrderRecord>(
+      stream: service.watchOrder(orderId),
+      builder: (context, snap) {
+        if (snap.hasError) {
+          return _MiniCard(message: 'Queue: ${snap.error}');
+        }
+        if (!snap.hasData) {
+          return const _MiniCard(message: 'Calculating your position…');
+        }
+
+        final order = snap.data!;
+        final createdAt = order.createdAt;
+        if (createdAt == null) {
+          return const _MiniCard(message: 'Calculating your position…');
+        }
+
+        return StreamBuilder<List<PrintOrderRecord>>(
+          stream: service.watchActiveQueueForShop(
+            ownerId: order.ownerId,
+            shopName: order.shopName,
+          ),
+          builder: (context, qSnap) {
+            if (qSnap.hasError) {
+              return _MiniCard(message: 'Queue: ${qSnap.error}');
+            }
+            final active = qSnap.data ?? const <PrintOrderRecord>[];
+            final ahead = active.where((o) {
+              final t = o.createdAt;
+              if (t == null) return false;
+              return t.isBefore(createdAt);
+            }).length;
+            return _MiniCard(
+              message: ahead == 0
+                  ? 'You are next in queue.'
+                  : '$ahead pending order(s) before you.',
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _MiniCard extends StatelessWidget {
+  final String message;
+  const _MiniCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1565C0).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF1565C0).withValues(alpha: 0.18),
+        ),
+      ),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF1A1A2E),
+        ),
+      ),
+    );
+  }
 }

@@ -15,6 +15,20 @@ class PrintOrderService {
   CollectionReference<Map<String, dynamic>> get _orders =>
       _firestore.collection('print_orders');
 
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _firestore.collection('users');
+
+  static const String _shopOpenKey = 'shopOpen';
+  static const String _shopClosedMessageKey = 'shopClosedMessage';
+  static const String _outOfStockKey = 'outOfStock';
+
+  // Out-of-stock map keys (match UI options)
+  static const String oosColor = 'color';
+  static const String oosLamination = 'lamination';
+  static const String oosGlossy = 'glossy';
+  static const String oosSpiralBinding = 'spiralBinding';
+  static const String oosTapeBinding = 'tapeBinding';
+
   // Supabase Storage config (public bucket + anon uploads).
   // NOTE: this is NOT the service role key.
   static const String _supabaseUrl = 'https://bkfwujraxqpotoehpunz.supabase.co';
@@ -40,6 +54,68 @@ class PrintOrderService {
       'ownerName': (data['ownerName'] ?? 'Owner').toString(),
       'shopName': (data['shopName'] ?? 'Print Shop').toString(),
     };
+  }
+
+  Stream<Map<String, dynamic>?> watchOwnerShopSettings(String ownerId) {
+    return _users.doc(ownerId).snapshots().map((snap) => snap.data());
+  }
+
+  Stream<Map<String, dynamic>?> watchDefaultOwnerShopSettings() {
+    // Uses the first owner as the "default shop" in this app.
+    return _users
+        .where('role', isEqualTo: 'owner')
+        .limit(1)
+        .snapshots()
+        .map((snap) => snap.docs.isEmpty ? null : snap.docs.first.data());
+  }
+
+  bool _isShopOpen(Map<String, dynamic>? ownerDoc) {
+    if (ownerDoc == null) return true;
+    final v = ownerDoc[_shopOpenKey];
+    if (v is bool) return v;
+    return true; // default open
+  }
+
+  Map<String, bool> _readOutOfStock(Map<String, dynamic>? ownerDoc) {
+    final raw = ownerDoc?[_outOfStockKey];
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry(k.toString(), v == true));
+    }
+    return const {};
+  }
+
+  String _closedMessage(Map<String, dynamic>? ownerDoc) {
+    final raw = ownerDoc?[_shopClosedMessageKey];
+    final msg = (raw ?? '').toString().trim();
+    return msg.isEmpty ? 'Shop is temporarily closed.' : msg;
+  }
+
+  void _enforceShopAvailability({
+    required Map<String, dynamic>? ownerDoc,
+    required PrintOrderSummary summary,
+  }) {
+    if (!_isShopOpen(ownerDoc)) {
+      throw Exception(_closedMessage(ownerDoc));
+    }
+
+    final oos = _readOutOfStock(ownerDoc);
+
+    final isColor = summary.printType == 'Color';
+    if (isColor && (oos[oosColor] == true)) {
+      throw Exception('Color printing is currently out of stock.');
+    }
+    if (summary.lamination && (oos[oosLamination] == true)) {
+      throw Exception('Lamination is currently out of stock.');
+    }
+    if (summary.glossy && (oos[oosGlossy] == true)) {
+      throw Exception('Glossy paper is currently out of stock.');
+    }
+    if (summary.spiralBinding && (oos[oosSpiralBinding] == true)) {
+      throw Exception('Spiral binding is currently out of stock.');
+    }
+    if (summary.tapeBinding && (oos[oosTapeBinding] == true)) {
+      throw Exception('Tape binding is currently out of stock.');
+    }
   }
 
   Future<Map<String, String>> uploadOrderFile({
@@ -115,6 +191,9 @@ class PrintOrderService {
     }
 
     final owner = await _getDefaultOwner();
+    final ownerDoc = await _users.doc(owner['ownerId'].toString()).get();
+    _enforceShopAvailability(ownerDoc: ownerDoc.data(), summary: summary);
+
     final upload = await uploadOrderFile(
       userId: user.uid,
       localFilePath: summary.filePath,
@@ -165,40 +244,128 @@ class PrintOrderService {
   }
 
   Stream<List<PrintOrderRecord>> watchOwnerQueue(String ownerId) {
-    return _orders
-        .where('ownerId', isEqualTo: ownerId)
-        .where('status', whereIn: [
-          PrintOrderStatus.pending,
-          PrintOrderStatus.processing,
-        ])
-        .orderBy('createdAt')
-        .snapshots()
-        .map(_mapRecords);
+    // NOTE: We intentionally avoid compound Firestore queries here to prevent
+    // `[cloud_firestore/failed-precondition] The query requires an index`.
+    //
+    // Also: some environments create orders with an ownerId that doesn't match
+    // the currently signed-in owner's UID. To ensure the queue is never empty,
+    // we fetch the active queue statuses and filter/sort locally.
+    return _orders.snapshots().map((snap) {
+      final records = _mapRecords(snap)
+          .where((o) =>
+              o.status == PrintOrderStatus.pending ||
+              o.status == PrintOrderStatus.processing)
+          .toList();
+
+      records.sort((a, b) {
+        final at = a.createdAt;
+        final bt = b.createdAt;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1; // nulls last
+        if (bt == null) return -1;
+        return at.compareTo(bt); // oldest first
+      });
+      return records;
+    });
   }
 
   Stream<List<PrintOrderRecord>> watchOwnerHistory(
     String ownerId, {
     String? status,
   }) {
-    Query<Map<String, dynamic>> query =
-        _orders.where('ownerId', isEqualTo: ownerId);
+    // Avoid compound Firestore queries (they require composite indexes).
+    // We filter/sort locally so the screen works immediately.
+    return _orders.snapshots().map((snap) {
+      final all = _mapRecords(snap);
 
-    if (status != null && status.isNotEmpty) {
-      query = query.where('status', isEqualTo: status);
-    }
+      final filtered = all.where((o) {
+        if (status != null && status.isNotEmpty && o.status != status) {
+          return false;
+        }
+        return true;
+      }).toList();
 
-    return query
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(_mapRecords);
+      filtered.sort((a, b) {
+        final at = a.createdAt;
+        final bt = b.createdAt;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1; // nulls last
+        if (bt == null) return -1;
+        return bt.compareTo(at); // newest first
+      });
+      return filtered;
+    });
+  }
+
+  Stream<List<PrintOrderRecord>> watchOwnerCompletedOrders({
+    required String ownerId,
+    String? shopName,
+  }) {
+    // Avoid compound Firestore queries (they require composite indexes).
+    // Filter/sort locally so earnings can load immediately.
+    return _orders.snapshots().map((snap) {
+      final records = _mapRecords(snap)
+          .where((o) {
+            if (o.status != PrintOrderStatus.completed) return false;
+            if (o.ownerId == ownerId) return true;
+            final sn = shopName?.trim();
+            if (sn != null && sn.isNotEmpty && o.shopName == sn) return true;
+            return false;
+          })
+          .toList();
+
+      records.sort((a, b) {
+        final at = a.completedAt ?? a.statusUpdatedAt ?? a.createdAt;
+        final bt = b.completedAt ?? b.statusUpdatedAt ?? b.createdAt;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1; // nulls last
+        if (bt == null) return -1;
+        return bt.compareTo(at); // newest first
+      });
+      return records;
+    });
   }
 
   Stream<List<PrintOrderRecord>> watchUserOrders(String userId) {
-    return _orders
-        .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map(_mapRecords);
+    // Avoid compound Firestore queries (they require composite indexes).
+    // We filter/sort locally so status updates reflect immediately.
+    return _orders.where('userId', isEqualTo: userId).snapshots().map((snap) {
+      final records = _mapRecords(snap).toList();
+      records.sort((a, b) {
+        final at = a.createdAt;
+        final bt = b.createdAt;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1; // nulls last
+        if (bt == null) return -1;
+        return bt.compareTo(at); // newest first
+      });
+      return records;
+    });
+  }
+
+  Stream<List<PrintOrderRecord>> watchActiveQueueForShop({
+    required String ownerId,
+    required String shopName,
+  }) {
+    // No compound query: filter/sort locally.
+    return _orders.snapshots().map((snap) {
+      final records = _mapRecords(snap).where((o) {
+        final matchShop = (o.ownerId == ownerId) || (o.shopName == shopName);
+        if (!matchShop) return false;
+        return o.status == PrintOrderStatus.pending ||
+            o.status == PrintOrderStatus.processing;
+      }).toList();
+
+      records.sort((a, b) {
+        final at = a.createdAt;
+        final bt = b.createdAt;
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1;
+        if (bt == null) return -1;
+        return at.compareTo(bt); // oldest first for queue
+      });
+      return records;
+    });
   }
 
   Stream<PrintOrderRecord> watchOrder(String orderId) {

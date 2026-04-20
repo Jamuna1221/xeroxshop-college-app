@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+    show kDebugMode, kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
@@ -18,9 +19,25 @@ class AdminApiService {
   static const int _emulatorPort = 5002;
 
   String get _baseUrl {
-    // Use emulator automatically for local debugging on web/desktop.
+    // IMPORTANT:
+    // - On a physical device, 127.0.0.1 points to the device itself, so the emulator URL will fail.
+    // - We only auto-use the emulator for web/desktop.
+    // - For Android Emulator, the host machine is reachable at 10.0.2.2 (optional).
     if (kDebugMode) {
-      return 'http://$_emulatorHost:$_emulatorPort/$_projectId/$_region/adminApi';
+      if (kIsWeb) {
+        return 'http://$_emulatorHost:$_emulatorPort/$_projectId/$_region/adminApi';
+      }
+      switch (defaultTargetPlatform) {
+        case TargetPlatform.windows:
+        case TargetPlatform.macOS:
+        case TargetPlatform.linux:
+          return 'http://$_emulatorHost:$_emulatorPort/$_projectId/$_region/adminApi';
+        case TargetPlatform.android:
+        case TargetPlatform.iOS:
+        case TargetPlatform.fuchsia:
+          // Use deployed function on mobile devices.
+          return _deployedBaseUrl;
+      }
     }
     return _deployedBaseUrl;
   }
